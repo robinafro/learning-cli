@@ -4,6 +4,29 @@ from difflib import SequenceMatcher
 import db
 from settings import SIMILARITY_MESSAGES
 
+def collect_all_ids():
+    courses = db.read('courses', default=[])
+    ids = []
+    for course in courses:
+        ids.append(course["id"])
+        for question in course["questions"]:
+            ids.append(question["id"])
+    return ids
+
+def autocomplete_id(input_id):
+    ids = collect_all_ids()
+    similarities = []
+    for id in ids:
+        match = SequenceMatcher(None, input_id, id).find_longest_match(0, len(input_id), 0, len(id))
+        similarities.append((match.size, id))
+    similarities.sort(key=lambda x: x[0], reverse=True)
+
+    if similarities[0][0] == 0:
+        print(f'{colorama.Fore.RED}Couldn\'t find the ID "{input_id}"{colorama.Style.RESET_ALL}')
+        exit(1)
+
+    return similarities[0][1]
+
 def list_courses(args):
     courses = db.read('courses', default=[])
     for course in courses:
@@ -167,6 +190,9 @@ def main():
     start_parser.set_defaults(func=start_course)
 
     args = parser.parse_args()
+
+    if 'id' in args:
+        args.id = autocomplete_id(args.id)
 
     if not args.command:
         parser.print_help()
