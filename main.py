@@ -1,4 +1,4 @@
-import argparse, colorama, random
+import argparse, colorama, random, json
 from models import Course, Question
 from difflib import SequenceMatcher
 import db
@@ -56,13 +56,30 @@ def add_questions(args):
     db.save('courses', courses)
     print(f'{colorama.Fore.GREEN}{len(questions)} questions added to course {course.id}{colorama.Style.RESET_ALL}')
 
-def new_course(args):
+def new_course_base(args, questions):
     current_courses = db.read('courses', default=[])
-    questions = get_questions_from_input()
     course = Course(name=args.name.strip(), questions=questions)
     current_courses.append(course.serialize())
     db.save('courses', current_courses)
     print(f'{colorama.Fore.GREEN}Course {course.name} created. ID: {colorama.Fore.BLUE} {course.id}{colorama.Style.RESET_ALL}')
+
+def new_course(args):
+    questions = get_questions_from_input()
+    new_course_base(args, questions)
+    
+def import_course(args):
+    print(f'{colorama.Fore.LIGHTBLACK_EX}{"-"*50}{colorama.Style.RESET_ALL}')
+    print(f'{colorama.Fore.CYAN}Please paste a valid JSON of questions for a new course "{args.name}"{colorama.Style.RESET_ALL}')
+    print()
+    print(f'{colorama.Fore.LIGHTBLACK_EX}The JSON should look as follows:')
+    print(f"{colorama.Fore.LIGHTBLACK_EX}[\n\t{{\n\t\t\"question\": \"What is the capital of France?\",\n\t\t\"answer\": \"Paris\"\n\t}},\n\t{{\n\t\t\"question\": \"What is the capital of Germany?\",\n\t\t\"answer\": \"Berlin\"\n\t}}\n]")
+    print(f'{colorama.Fore.LIGHTBLACK_EX}{"-" * 50}{colorama.Style.RESET_ALL}')
+    questions = input(f'{colorama.Fore.YELLOW}Questions JSON:{colorama.Style.RESET_ALL} ')
+    try:
+        questions_list = json.loads(questions)
+        new_course_base(args, questions_list)
+    except Exception as e:
+        print(f'{colorama.Fore.RED}Error: {e}{colorama.Style.RESET_ALL}')
 
 def delete(args):
     courses = db.read('courses', default=[])
@@ -136,6 +153,10 @@ def main():
     new_parser = subparsers.add_parser('new', help='Create a new course')
     new_parser.add_argument('name', type=str, help='Course name')
     new_parser.set_defaults(func=new_course)
+
+    import_parser = subparsers.add_parser('import', help='Import questions from a JSON into a new course')
+    import_parser.add_argument('name', type=str, help='Course name')
+    import_parser.set_defaults(func=import_course)
 
     add_parser = subparsers.add_parser('add', help='Add a question to a course')
     add_parser.add_argument('id', type=str, help='Course ID')
