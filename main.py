@@ -1,5 +1,6 @@
 import argparse, colorama, random
 from models import Course, Question
+from difflib import SequenceMatcher
 import db
 from settings import SIMILARITY_MESSAGES
 
@@ -101,7 +102,7 @@ def start_course(args):
         if len(user_answer) == 0:
             print(f'{colorama.Fore.LIGHTBLACK_EX}Answer was: {colorama.Fore.GREEN}{question.answer}{colorama.Style.RESET_ALL}')
         else:
-            similarity = user_answer == question.answer # TODO: Calculate similarity (add a method to Question, return float 0..1)
+            similarity = SequenceMatcher(None, user_answer, question.answer).ratio()
             for key, message in SIMILARITY_MESSAGES.items():
                 if key[0] <= similarity <= key[1]:
                     print(message.replace('$answer', question.answer))
