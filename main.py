@@ -20,9 +20,8 @@ def autocomplete_id(input_id):
         match = SequenceMatcher(None, input_id, id).find_longest_match(0, len(input_id), 0, len(id))
         similarities.append((match.size, id))
     similarities.sort(key=lambda x: x[0], reverse=True)
-
-    if similarities[0][0] == 0:
-        print(f'{colorama.Fore.RED}Couldn\'t find the ID "{input_id}"{colorama.Style.RESET_ALL}')
+    if len(similarities) == 0 or similarities[0][0] < 3:
+        print(f'{colorama.Fore.RED}Couldn\'t find anything that matches "{input_id}"{colorama.Style.RESET_ALL}')
         exit(1)
 
     return similarities[0][1]
