@@ -28,3 +28,9 @@ And paste it in!
 There are many more commands, such as deleting or appending questions to an existing course. You can view those using the `-h` flag or by running the script with no commands.
 
 ### Happy studying!
+
+---
+
+## the future
+In the future, I plan on adding a lot more features, such as graphing your progress (past scores on one course), an algorithm that prioritizes questions that you struggle with and more!
+If you're interested in helping out with this, feel absolutely free to open a pull request! :)
