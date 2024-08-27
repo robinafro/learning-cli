@@ -1,6 +1,7 @@
-import argparse, colorama
+import argparse, colorama, random
 from models import Course, Question
 import db
+from settings import SIMILARITY_MESSAGES
 
 def list_courses(args):
     courses = db.read('courses', default=[])
@@ -31,7 +32,7 @@ def get_questions_from_input():
         if question == 'done':
             break
         answer = input(f'{colorama.Fore.YELLOW}Answer{colorama.Style.RESET_ALL}: ')
-        questions.append({'question': question, 'answer': answer})
+        questions.append({'question': question.strip(), 'answer': answer.strip().lower()})
     return questions
 
 def add_questions(args):
@@ -57,7 +58,7 @@ def add_questions(args):
 def new_course(args):
     current_courses = db.read('courses', default=[])
     questions = get_questions_from_input()
-    course = Course(name=args.name, questions=questions)
+    course = Course(name=args.name.strip(), questions=questions)
     current_courses.append(course.serialize())
     db.save('courses', current_courses)
     print(f'{colorama.Fore.GREEN}Course {course.name} created. ID: {colorama.Fore.BLUE} {course.id}{colorama.Style.RESET_ALL}')
@@ -79,6 +80,41 @@ def delete(args):
                 return
     
     print(f'{colorama.Fore.RED}Didn\'t find anything that matches the ID!{colorama.Style.RESET_ALL}')
+
+def start_course(args):
+    courses = db.read('courses', default=[])
+    course_raw = next((c for c in courses if c["id"] == args.id), None)
+    if not course_raw:
+        print(f'{colorama.Fore.RED}Course not found!{colorama.Style.RESET_ALL}')
+        return
+    course = Course(**course_raw)
+
+    print(f'{colorama.Fore.GREEN}Starting course "{course.name}"{colorama.Style.RESET_ALL}')
+    print(f'{colorama.Fore.LIGHTBLACK_EX}{"-"*50}{colorama.Style.RESET_ALL}')
+
+    random.shuffle(course.questions)
+
+    similarities = []
+    for question in course.questions:
+        print(f'{colorama.Fore.YELLOW}{question.question}{"?" if not question.question.endswith("?") else ""}{colorama.Style.RESET_ALL}')
+        user_answer = input(f'{colorama.Fore.CYAN}Your answer{colorama.Fore.LIGHTBLACK_EX} (press enter to reveal): {colorama.Style.RESET_ALL}').strip().lower()
+        if len(user_answer) == 0:
+            print(f'{colorama.Fore.LIGHTBLACK_EX}Answer was: {colorama.Fore.GREEN}{question.answer}{colorama.Style.RESET_ALL}')
+        else:
+            similarity = user_answer == question.answer # TODO: Calculate similarity (add a method to Question, return float 0..1)
+            for key, message in SIMILARITY_MESSAGES.items():
+                if key[0] <= similarity <= key[1]:
+                    print(message.replace('$answer', question.answer))
+                    break
+            similarities.append(similarity)
+
+        print(f'{colorama.Fore.LIGHTBLACK_EX}{"-"*50}{colorama.Style.RESET_ALL}')
+
+    score = sum(similarities) / len(similarities)
+
+    print(f'{colorama.Fore.CYAN}That\'s it! You\'ve finished the course!{colorama.Style.RESET_ALL}')
+    print()
+    print(f'{colorama.Fore.YELLOW}Your score: {colorama.Fore.GREEN}{score*100:.2f}%{colorama.Style.RESET_ALL}')
 
 def main():
     colorama.init(autoreset=True)
@@ -103,6 +139,10 @@ def main():
     add_parser = subparsers.add_parser('add', help='Add a question to a course')
     add_parser.add_argument('id', type=str, help='Course ID')
     add_parser.set_defaults(func=add_questions)
+
+    start_parser = subparsers.add_parser('start', help='Start a course')
+    start_parser.add_argument('id', type=str, help='Course ID')
+    start_parser.set_defaults(func=start_course)
 
     args = parser.parse_args()
 
