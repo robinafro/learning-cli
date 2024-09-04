@@ -121,6 +121,88 @@ def delete(args):
     
     print(f'{colorama.Fore.RED}Didn\'t find anything that matches the ID!{colorama.Style.RESET_ALL}')
 
+def log_answer_result(question, property, value):
+    # incremental update
+    log = db.read('log', default={})
+    question_data_all = log.get("question_data", {})
+    question_data = question_data_all.get(question.id, {})
+
+    if property not in question_data:
+        question_data[property] = 0
+
+    question_data[property] += value
+
+    question_data_all[question.id] = question_data
+    log["question_data"] = question_data_all
+    db.save('log', log)
+
+def calculate_priority(question_data, penalty_factor=0.2, epsilon=0.01):
+    """
+    Calculate the priority score for a question based on its score data.
+
+    Parameters:
+    question_data (dict): A dictionary containing 'score', 'attempts', and 'skips'.
+    penalty_factor (float): The factor by which skips affect the score.
+    epsilon (float): A small constant to prevent division by zero.
+
+    Returns:
+    float: The priority score of the question.
+    """
+    score = question_data.get('score', 0)
+    attempts = question_data.get('attempts', 0)
+    skips = question_data.get('skips', 0)
+    
+    if attempts == 0:
+        # If there are no attempts, give it the highest priority.
+        return 1.0
+
+    # Calculate the average score
+    avg_score = score / attempts
+    
+    # Adjust for skips
+    adjusted_score = max(avg_score - (skips / attempts * penalty_factor), 0)
+    
+    # Compute the priority (higher means more priority)
+    priority = 1 / (adjusted_score + epsilon)
+    return priority
+
+def select_questions_with_priority(question_data, question_count):
+    """
+    Select questions to ask, repeating them based on their priority.
+
+    Parameters:
+    question_data (dict): A dict containing question data. (question id = {score, attempts, skips})
+    question_count (int): The total number of questions to ask.
+
+    Returns:
+    list: A list of selected question indices.
+    """
+    # Calculate priorities for each question
+    priorities = [(i, calculate_priority(data)) for i, data in question_data.items()]
+
+    # Normalize priorities so they sum to 1
+    total_priority = sum(p[1] for p in priorities)
+    normalized_priorities = [(i, p / total_priority) for i, p in priorities]
+
+    # Create a weighted list of question indices based on their normalized priorities
+    question_pool = []
+    for index, normalized_priority in normalized_priorities:
+        # Determine how many times this question should appear in the pool
+        count = int(round(normalized_priority * question_count))
+        question_pool.extend([index] * count)
+
+    # Shuffle the pool to ensure randomness
+    random.shuffle(question_pool)
+
+    # Select `question_count` questions, allowing for repeats based on priority
+    selected_questions = question_pool[:question_count]
+
+    # If the number of selected questions is less than required (due to rounding), fill in the rest randomly
+    while len(selected_questions) < question_count:
+        selected_questions.append(random.choice([i for i, _ in priorities]))
+        
+    return selected_questions
+
 def start_course(args):
     courses = db.read('courses', default=[])
     course_raw = next((c for c in courses if c["id"] == args.id), None)
@@ -129,17 +211,31 @@ def start_course(args):
         return
     course = Course(**course_raw)
 
+    question_count = args.count if "count" in args and args.count != None else len(course.questions)
+
     print(f'{colorama.Fore.GREEN}Starting course "{course.name}"{colorama.Style.RESET_ALL}')
     print(f'{colorama.Fore.LIGHTBLACK_EX}{"-"*50}{colorama.Style.RESET_ALL}')
 
-    random.shuffle(course.questions)
-
+    question_data = db.read('log', default={}).get("question_data", {})
+    for q in course.questions:
+        if q.id not in question_data:
+            question_data[q.id] = {}
+    selected_questions_ids = select_questions_with_priority(question_data, question_count)
+    selected_questions = []
+    for i in selected_questions_ids:
+        for q in course.questions:
+            if q.id == i:
+                selected_questions.append(q)
+                break
+    
     similarities = []
-    for question in course.questions:
+    for question in selected_questions:
         print(f'{colorama.Fore.YELLOW}{question.question}{"?" if not question.question.endswith("?") else ""}{colorama.Style.RESET_ALL}')
         user_answer = input(f'{colorama.Fore.CYAN}Your answer{colorama.Fore.LIGHTBLACK_EX} (press enter to reveal): {colorama.Style.RESET_ALL}').strip().lower()
         if len(user_answer) == 0:
             print(f'{colorama.Fore.LIGHTBLACK_EX}Answer was: {colorama.Fore.GREEN}{question.answer}{colorama.Style.RESET_ALL}')
+
+            log_answer_result(question, "skips", 1)
         else:
             similarity = SequenceMatcher(None, user_answer, question.answer).ratio()
             for key, message in SIMILARITY_MESSAGES.items():
@@ -147,10 +243,12 @@ def start_course(args):
                     print(message.replace('$answer', question.answer))
                     break
             similarities.append(similarity)
+            log_answer_result(question, "score", similarity)
+        log_answer_result(question, "attempts", 1)
 
         print(f'{colorama.Fore.LIGHTBLACK_EX}{"-"*50}{colorama.Style.RESET_ALL}')
 
-    score = sum(similarities) / len(similarities)
+    score = sum(similarities) / len(similarities) if len(similarities) > 0 else 0
 
     print(f'{colorama.Fore.CYAN}That\'s it! You\'ve finished the course!{colorama.Style.RESET_ALL}')
     print()
@@ -186,6 +284,8 @@ def main():
 
     start_parser = subparsers.add_parser('start', help='Start a course')
     start_parser.add_argument('id', type=str, help='Course ID')
+    # optional: question count
+    start_parser.add_argument('-c', '--count', type=int, help='Number of questions to ask')
     start_parser.set_defaults(func=start_course)
 
     args = parser.parse_args()
